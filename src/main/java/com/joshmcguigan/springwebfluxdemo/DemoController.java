@@ -3,17 +3,16 @@ package com.joshmcguigan.springwebfluxdemo;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
-import java.util.stream.Collectors;
 
 @Controller
 public class DemoController {
-
     @GetMapping("/greeting")
     @ResponseBody
     public String greeting() {
@@ -22,124 +21,83 @@ public class DemoController {
 
     @GetMapping("/single")
     @ResponseBody
-    public HttpBinResponse single() {
-        RestTemplate restTemplate = new RestTemplate();
+    public Mono<HttpBinResponse> single() {
+        WebClient webClient = WebClient.create();
 
-        HttpBinResponse response = restTemplate.getForObject("https://httpbin.org/delay/2", HttpBinResponse.class);
+        Mono<HttpBinResponse> response = webClient.get().uri("https://httpbin.org/delay/2").retrieve().bodyToMono(HttpBinResponse.class);
 
         return response;
     }
 
-    @GetMapping("/serial")
+    @GetMapping("/parallel")
     @ResponseBody
-    public List<HttpBinResponse> serial() {
-        RestTemplate restTemplate = new RestTemplate();
+    public Flux<HttpBinResponse> serial() {
+        WebClient webClient = WebClient.create();
 
-        List<HttpBinResponse> responses = new LinkedList<>();
+        List<Mono<HttpBinResponse>> responses = new LinkedList<>();
 
         for (int i = 1; i <= 3; i++) {
             String url = String.format("https://httpbin.org/delay/%d", i);
 
-            HttpBinResponse response = restTemplate.getForObject(url, HttpBinResponse.class);
+            Mono<HttpBinResponse> response = webClient.get().uri(url).retrieve().bodyToMono(HttpBinResponse.class);
             responses.add(response);
         }
 
 
-        return responses;
-    }
-
-    @GetMapping("/parallel")
-    @ResponseBody
-    public List<HttpBinResponse> parallel() {
-        RestTemplate restTemplate = new RestTemplate();
-
-        List<String> urls = new LinkedList<>();
-
-        for (int i = 1; i <= 3; i++) {
-            String url = String.format("https://httpbin.org/delay/%d", i);
-            urls.add(url);
-        }
-
-        List<HttpBinResponse> responses = urls.parallelStream() // this could be stream() instead of parallel stream
-                .map(url -> restTemplate.getForObject(url, HttpBinResponse.class))
-                .collect(Collectors.toList());
-
-        return responses;
+        return Flux.merge(responses);
     }
 
     @GetMapping("/parallel-many")
     @ResponseBody
-    public List<HttpBinResponse> parallelMany() {
-        RestTemplate restTemplate = new RestTemplate();
+    public Flux<HttpBinResponse> parallelMany() {
+        WebClient webClient = WebClient.create();
 
-        List<String> urls = new LinkedList<>();
+        List<Mono<HttpBinResponse>> responses = new LinkedList<>();
 
-        // more urls than I have cores
         for (int i = 1; i <= 3; i++) {
             String url = String.format("https://httpbin.org/delay/%d", i);
-            urls.add(url);
-            urls.add(url);
-            urls.add(url);
-            urls.add(url);
+            for (int j = 0; j < 4; j++) {
+                Mono<HttpBinResponse> response = webClient.get().uri(url).retrieve().bodyToMono(HttpBinResponse.class);
+                responses.add(response);
+            }
         }
 
-        List<HttpBinResponse> responses = urls.parallelStream()
-                .map(url -> restTemplate.getForObject(url, HttpBinResponse.class))
-                .collect(Collectors.toList());
-
-        return responses;
-    }
-
-    @GetMapping("/parallel-custom")
-    @ResponseBody
-    public List<HttpBinResponse> parallelCustom() throws ExecutionException, InterruptedException {
-        RestTemplate restTemplate = new RestTemplate();
-
-        List<String> urls = new LinkedList<>();
-
-        // more urls than I have cores
-        for (int i = 1; i <= 3; i++) {
-            String url = String.format("https://httpbin.org/delay/%d", i);
-            urls.add(url);
-            urls.add(url);
-            urls.add(url);
-            urls.add(url);
-        }
-
-        ForkJoinPool forkJoinPool = new ForkJoinPool(12);
-        List<HttpBinResponse> responses = forkJoinPool.submit(() ->
-                urls.parallelStream()
-                        .map(url -> restTemplate.getForObject(url, HttpBinResponse.class))
-                        .collect(Collectors.toList())
-        ).get();
-
-        return responses;
+        return Flux.merge(responses);
     }
 
     @GetMapping("/parallel-overload")
     @ResponseBody
-    public List<HttpBinResponse> parallelOverload() throws ExecutionException, InterruptedException {
-        RestTemplate restTemplate = new RestTemplate();
+    public Flux<HttpBinResponse> parallelOverload() throws ExecutionException, InterruptedException {
+        WebClient webClient = WebClient.create();
 
-        List<String> urls = new LinkedList<>();
+        List<Mono<HttpBinResponse>> responses = new LinkedList<>();
 
-        // more urls than I have cores
         for (int i = 1; i <= 3; i++) {
             String url = String.format("https://httpbin.org/delay/%d", i);
             for (int j = 0; j < 50; j++) {
-                urls.add(url);
+                Mono<HttpBinResponse> response = webClient.get().uri(url).retrieve().bodyToMono(HttpBinResponse.class);
+                responses.add(response);
             }
         }
 
-        ForkJoinPool forkJoinPool = new ForkJoinPool(150);
-        List<HttpBinResponse> responses = forkJoinPool.submit(() ->
-                urls.parallelStream()
-                        .map(url -> restTemplate.getForObject(url, HttpBinResponse.class))
-                        .collect(Collectors.toList())
-        ).get();
-
-
-        return responses;
+        return Flux.merge(responses);
     }
 
+    @GetMapping("/alot")
+    @ResponseBody
+    public Flux<HttpBinResponse> alot() throws ExecutionException, InterruptedException {
+        WebClient webClient = WebClient.create();
+
+        List<Mono<HttpBinResponse>> responses = new LinkedList<>();
+
+        for (int i = 1; i <= 3; i++) {
+            String url = String.format("https://httpbin.org/delay/%d", i);
+            for (int j = 0; j < 500; j++) {
+                Mono<HttpBinResponse> response = webClient.get().uri(url).retrieve().bodyToMono(HttpBinResponse.class);
+                responses.add(response);
+            }
+        }
+
+        return Flux.merge(responses);
+    }
 }
